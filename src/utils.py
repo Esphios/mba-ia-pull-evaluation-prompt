@@ -1,243 +1,253 @@
-"""
-Funções auxiliares para o projeto de otimização de prompts.
-"""
+from __future__ import annotations
 
 import os
-import yaml
-import json
-from typing import Dict, Any, Optional
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+import yaml
 from dotenv import load_dotenv
+from langchain_core.prompts import ChatPromptTemplate
 
 load_dotenv()
 
-
-def load_yaml(file_path: str) -> Optional[Dict[str, Any]]:
-    """
-    Carrega arquivo YAML.
-
-    Args:
-        file_path: Caminho do arquivo YAML
-
-    Returns:
-        Dicionário com conteúdo do YAML ou None se erro
-    """
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = yaml.safe_load(f)
-        return data
-    except FileNotFoundError:
-        print(f"❌ Arquivo não encontrado: {file_path}")
-        return None
-    except yaml.YAMLError as e:
-        print(f"❌ Erro ao parsear YAML: {e}")
-        return None
-    except Exception as e:
-        print(f"❌ Erro ao carregar arquivo: {e}")
-        return None
+ROOT_DIR = Path(__file__).resolve().parent.parent
+PROMPTS_DIR = ROOT_DIR / "prompts"
+DATASET_PATH = ROOT_DIR / "datasets" / "bug_to_user_story.jsonl"
+PROMPT_V1_PATH = PROMPTS_DIR / "bug_to_user_story_v1.yml"
+PROMPT_V2_PATH = PROMPTS_DIR / "bug_to_user_story_v2.yml"
+RAW_PROMPTS_PATH = PROMPTS_DIR / "raw_prompts.yml"
+DEFAULT_DATASET_NAME = "bug_to_user_story_eval"
 
 
-def save_yaml(data: Dict[str, Any], file_path: str) -> bool:
-    """
-    Salva dados em arquivo YAML.
-
-    Args:
-        data: Dados para salvar
-        file_path: Caminho do arquivo de saída
-
-    Returns:
-        True se sucesso, False caso contrário
-    """
-    try:
-        output_file = Path(file_path)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(output_file, 'w', encoding='utf-8') as f:
-            yaml.dump(data, f, allow_unicode=True, sort_keys=False, indent=2)
-
-        return True
-    except Exception as e:
-        print(f"❌ Erro ao salvar arquivo: {e}")
-        return False
+@dataclass(frozen=True)
+class Settings:
+    provider: str
+    openai_model: str
+    openai_eval_model: str
+    google_model: str
+    google_eval_model: str
+    langsmith_prompt_source: str
+    langsmith_prompt_target: str
+    langsmith_dataset_name: str
+    langsmith_project: str
+    langsmith_upload_results: bool
 
 
-def check_env_vars(required_vars: list) -> bool:
-    """
-    Verifica se variáveis de ambiente obrigatórias estão configuradas.
-
-    Args:
-        required_vars: Lista de variáveis obrigatórias
-
-    Returns:
-        True se todas configuradas, False caso contrário
-    """
-    missing_vars = []
-
-    for var in required_vars:
-        if not os.getenv(var):
-            missing_vars.append(var)
-
-    if missing_vars:
-        print("❌ Variáveis de ambiente faltando:")
-        for var in missing_vars:
-            print(f"   - {var}")
-        print("\nConfigure-as no arquivo .env antes de continuar.")
-        return False
-
-    return True
+def _env(*names: str, default: str = "") -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value not in (None, ""):
+            return value
+    return default
 
 
-def format_score(score: float, threshold: float = 0.9) -> str:
-    """
-    Formata score com indicador visual de aprovação.
-
-    Args:
-        score: Score entre 0.0 e 1.0
-        threshold: Limite mínimo para aprovação
-
-    Returns:
-        String formatada com score e símbolo
-    """
-    symbol = "✓" if score >= threshold else "✗"
-    return f"{score:.2f} {symbol}"
+def parse_bool(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def print_section_header(title: str, char: str = "=", width: int = 50):
-    """
-    Imprime cabeçalho de seção formatado.
-
-    Args:
-        title: Título da seção
-        char: Caractere para a linha
-        width: Largura da linha
-    """
-    print("\n" + char * width)
-    print(title)
-    print(char * width + "\n")
+def canonical_dataset_name(value: str | None) -> str:
+    candidate = (value or "").strip()
+    if not candidate or candidate.lower() == "default":
+        return DEFAULT_DATASET_NAME
+    return candidate
 
 
-def validate_prompt_structure(prompt_data: Dict[str, Any]) -> tuple[bool, list]:
-    """
-    Valida estrutura básica de um prompt.
+def load_settings() -> Settings:
+    load_dotenv()
 
-    Args:
-        prompt_data: Dados do prompt
+    provider = _env("PROVIDER", "LLM_PROVIDER", default="openai").strip().lower()
+    if provider == "gemini":
+        provider = "google"
 
-    Returns:
-        (is_valid, errors) - Tupla com status e lista de erros
-    """
-    errors = []
+    return Settings(
+        provider=provider,
+        openai_model=_env("OPENAI_MODEL", "LLM_MODEL", default="gpt-4o-mini"),
+        openai_eval_model=_env("OPENAI_EVAL_MODEL", "EVAL_MODEL", default="gpt-4o"),
+        google_model=_env("GOOGLE_MODEL", "LLM_MODEL", default="gemini-2.5-flash"),
+        google_eval_model=_env("GOOGLE_EVAL_MODEL", "EVAL_MODEL", default="gemini-2.5-flash"),
+        langsmith_prompt_source=_env(
+            "LANGSMITH_PROMPT_SOURCE",
+            default="leonanluppi/bug_to_user_story_v1",
+        ),
+        langsmith_prompt_target=_env("LANGSMITH_PROMPT_TARGET"),
+        langsmith_dataset_name=canonical_dataset_name(
+            _env("LANGSMITH_DATASET_NAME", default=DEFAULT_DATASET_NAME)
+        ),
+        langsmith_project=_env(
+            "LANGSMITH_PROJECT",
+            "LANGCHAIN_PROJECT",
+            default="bug-to-user-story",
+        ),
+        langsmith_upload_results=parse_bool(
+            _env("LANGSMITH_UPLOAD_RESULTS", default="true"),
+            default=True,
+        ),
+    )
 
-    required_fields = ['description', 'system_prompt', 'version']
+
+def read_yaml(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
+        data = yaml.safe_load(handle) or {}
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Era esperado um objeto YAML do tipo mapa em {path}, mas foi encontrado {type(data).__name__}."
+        )
+    return data
+
+
+def write_yaml(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(payload, handle, allow_unicode=True, sort_keys=False)
+
+
+def load_prompt_document(path: Path = PROMPT_V2_PATH) -> dict[str, Any]:
+    return read_yaml(path)
+
+
+def validate_prompt_document(document: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+
+    required_fields = (
+        "name",
+        "description",
+        "metadata",
+        "system_prompt",
+        "few_shot_examples",
+        "user_prompt",
+    )
     for field in required_fields:
-        if field not in prompt_data:
-            errors.append(f"Campo obrigatório faltando: {field}")
+        if field not in document:
+            errors.append(f"Campo obrigatório ausente: {field}")
 
-    system_prompt = prompt_data.get('system_prompt', '').strip()
+    system_prompt = str(document.get("system_prompt", "")).strip()
+    user_prompt = str(document.get("user_prompt", "")).strip()
     if not system_prompt:
-        errors.append("system_prompt está vazio")
+        errors.append("system_prompt está vazio.")
+    if not user_prompt:
+        errors.append("user_prompt está vazio.")
 
-    if 'TODO' in system_prompt:
-        errors.append("system_prompt ainda contém TODOs")
+    few_shot_examples = document.get("few_shot_examples", [])
+    if not isinstance(few_shot_examples, list) or len(few_shot_examples) < 2:
+        errors.append("few_shot_examples deve conter pelo menos 2 exemplos.")
 
-    techniques = prompt_data.get('techniques_applied', [])
-    if len(techniques) < 2:
-        errors.append(f"Mínimo de 2 técnicas requeridas, encontradas: {len(techniques)}")
+    metadata = document.get("metadata", {})
+    if not isinstance(metadata, dict):
+        errors.append("metadata deve ser um objeto YAML.")
+        metadata = {}
 
-    return (len(errors) == 0, errors)
+    required_metadata_fields = (
+        "version",
+        "techniques",
+        "author",
+        "target_format",
+        "status",
+    )
+    for field in required_metadata_fields:
+        value = metadata.get(field)
+        if value in (None, "", []):
+            errors.append(f"metadata.{field} estÃ¡ ausente ou vazio.")
 
+    techniques = metadata.get("techniques", []) if isinstance(metadata, dict) else []
+    if not isinstance(techniques, list) or len(techniques) < 2:
+        errors.append("metadata.techniques deve conter pelo menos 2 itens.")
 
-def extract_json_from_response(response_text: str) -> Optional[Dict[str, Any]]:
-    """
-    Extrai JSON de uma resposta de LLM que pode conter texto adicional.
+    serialized = yaml.safe_dump(document, allow_unicode=True, sort_keys=False)
+    if "TODO" in serialized:
+        errors.append("O documento do prompt ainda contém marcadores TODO.")
 
-    Args:
-        response_text: Texto da resposta do LLM
-
-    Returns:
-        Dicionário extraído ou None se não encontrar JSON válido
-    """
-    try:
-        return json.loads(response_text)
-    except json.JSONDecodeError:
-        start = response_text.find('{')
-        end = response_text.rfind('}') + 1
-
-        if start != -1 and end > start:
-            try:
-                json_str = response_text[start:end]
-                return json.loads(json_str)
-            except json.JSONDecodeError:
-                pass
-
-    return None
+    return errors
 
 
-def get_llm(model: Optional[str] = None, temperature: float = 0.0):
-    """
-    Retorna uma instância de LLM configurada baseada no provider.
+def build_chat_prompt_from_document(document: dict[str, Any]) -> ChatPromptTemplate:
+    messages: list[tuple[str, str]] = [("system", str(document["system_prompt"]).strip())]
 
-    Args:
-        model: Nome do modelo (opcional, usa LLM_MODEL do .env por padrão)
-        temperature: Temperatura para geração (padrão: 0.0 para determinístico)
+    for example in document.get("few_shot_examples", []):
+        example_input = str(example.get("input", "")).strip()
+        example_output = str(example.get("output", "")).strip()
+        if example_input and example_output:
+            messages.append(("human", example_input))
+            messages.append(("ai", example_output))
 
-    Returns:
-        Instância de ChatOpenAI ou ChatGoogleGenerativeAI
+    messages.append(("human", str(document["user_prompt"]).strip()))
+    return ChatPromptTemplate.from_messages(messages)
 
-    Raises:
-        ValueError: Se provider não for suportado ou API key não configurada
-    """
-    provider = os.getenv('LLM_PROVIDER', 'openai').lower()
-    model_name = model or os.getenv('LLM_MODEL', 'gpt-4o-mini')
 
-    if provider == 'openai':
+def role_from_message_template(message: Any) -> str:
+    class_name = type(message).__name__.lower()
+    if "system" in class_name:
+        return "system"
+    if "ai" in class_name:
+        return "ai"
+    return "human"
+
+
+def extract_prompt_messages(prompt: ChatPromptTemplate) -> list[dict[str, str]]:
+    extracted: list[dict[str, str]] = []
+    for message in prompt.messages:
+        template = getattr(getattr(message, "prompt", None), "template", None)
+        if template is None:
+            template = str(message)
+        extracted.append(
+            {
+                "role": role_from_message_template(message),
+                "template": str(template).strip(),
+            }
+        )
+    return extracted
+
+
+def build_generation_model(settings: Settings, *, eval_mode: bool = False):
+    if settings.provider == "openai":
         from langchain_openai import ChatOpenAI
 
-        api_key = os.getenv('OPENAI_API_KEY')
+        api_key = _env("OPENAI_API_KEY")
         if not api_key:
-            raise ValueError(
-                "OPENAI_API_KEY não configurada no .env\n"
-                "Obtenha uma chave em: https://platform.openai.com/api-keys"
-            )
+            raise RuntimeError("OPENAI_API_KEY não está configurada.")
 
-        return ChatOpenAI(
-            model=model_name,
-            temperature=temperature,
-            api_key=api_key
-        )
+        model_name = settings.openai_eval_model if eval_mode else settings.openai_model
+        return ChatOpenAI(model=model_name, temperature=0, api_key=api_key)
 
-    elif provider == 'google':
+    if settings.provider == "google":
         from langchain_google_genai import ChatGoogleGenerativeAI
 
-        api_key = os.getenv('GOOGLE_API_KEY')
+        api_key = _env("GOOGLE_API_KEY")
         if not api_key:
-            raise ValueError(
-                "GOOGLE_API_KEY não configurada no .env\n"
-                "Obtenha uma chave em: https://aistudio.google.com/app/apikey"
-            )
+            raise RuntimeError("GOOGLE_API_KEY não está configurada.")
 
+        model_name = settings.google_eval_model if eval_mode else settings.google_model
         return ChatGoogleGenerativeAI(
             model=model_name,
-            temperature=temperature,
-            google_api_key=api_key
+            temperature=0,
+            google_api_key=api_key,
         )
 
-    else:
-        raise ValueError(
-            f"Provider '{provider}' não suportado.\n"
-            f"Use 'openai' ou 'google' na variável LLM_PROVIDER do .env"
-        )
+    raise RuntimeError("PROVIDER não suportado. Use 'openai' ou 'google'.")
 
 
-def get_eval_llm(temperature: float = 0.0):
-    """
-    Retorna LLM configurado especificamente para avaliação (usa EVAL_MODEL).
+def coerce_response_text(response: Any) -> str:
+    content = getattr(response, "content", response)
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if text:
+                    parts.append(str(text))
+            else:
+                parts.append(str(item))
+        return "\n".join(part for part in parts if part).strip()
+    return str(content).strip()
 
-    Args:
-        temperature: Temperatura para geração
 
-    Returns:
-        Instância de LLM configurada para avaliação
-    """
-    eval_model = os.getenv('EVAL_MODEL', 'gpt-4o')
-    return get_llm(model=eval_model, temperature=temperature)
+def unique_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            ordered.append(value)
+    return ordered

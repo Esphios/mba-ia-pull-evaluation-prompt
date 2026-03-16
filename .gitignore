@@ -5,31 +5,33 @@ __pycache__/
 *.so
 .Python
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
+site/
 .eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
 *.egg
+*.egg-info/
+pip-wheel-metadata/
 
-# Virtual Environment
+# Virtual environments
+.venv/
 venv/
 env/
 ENV/
 
-# Environment variables
+# Local environment files
 .env
 .env.local
 
-# IDE
+# Tooling caches
+.pytest_cache/
+pytest-cache-files-*/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# IDE / OS
 .vscode/
 .idea/
 *.swp
@@ -37,14 +39,10 @@ ENV/
 *~
 .DS_Store
 
-# pytest
-.pytest_cache/
-.coverage
-
-# Logs
+# Logs and runtime artifacts
 *.log
-
-# Project specific
-screenshots/
 results/
+
+# Local automation / agent artifacts
 .claude/
+.worktrees/
