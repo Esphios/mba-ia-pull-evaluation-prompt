@@ -1,45 +1,92 @@
-"""
-Testes automatizados para validação de prompts.
-"""
-import pytest
-import yaml
-import sys
+from __future__ import annotations
+
 from pathlib import Path
+import unicodedata
 
-# Adicionar src ao path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+import yaml
 
-from utils import validate_prompt_structure
+try:
+    from src.dataset import load_dataset_rows
+except ImportError:
+    from dataset import load_dataset_rows
 
-def load_prompts(file_path: str):
-    """Carrega prompts do arquivo YAML."""
-    with open(file_path, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)
+PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "bug_to_user_story_v2.yml"
 
-class TestPrompts:
-    def test_prompt_has_system_prompt(self):
-        """Verifica se o campo 'system_prompt' existe e não está vazio."""
-        pass
 
-    def test_prompt_has_role_definition(self):
-        """Verifica se o prompt define uma persona (ex: "Você é um Product Manager")."""
-        pass
+def normalize(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text)
+    return normalized.encode("ascii", "ignore").decode("ascii").lower()
 
-    def test_prompt_mentions_format(self):
-        """Verifica se o prompt exige formato Markdown ou User Story padrão."""
-        pass
 
-    def test_prompt_has_few_shot_examples(self):
-        """Verifica se o prompt contém exemplos de entrada/saída (técnica Few-shot)."""
-        pass
+def load_prompt() -> dict:
+    assert PROMPT_PATH.exists(), f"Arquivo de prompt não encontrado: {PROMPT_PATH}"
+    with PROMPT_PATH.open("r", encoding="utf-8") as handle:
+        return yaml.safe_load(handle)
 
-    def test_prompt_no_todos(self):
-        """Garante que você não esqueceu nenhum `[TODO]` no texto."""
-        pass
 
-    def test_minimum_techniques(self):
-        """Verifica (através dos metadados do yaml) se pelo menos 2 técnicas foram listadas."""
-        pass
+def test_prompt_has_system_prompt():
+    data = load_prompt()
+    assert "system_prompt" in data
+    assert str(data["system_prompt"]).strip()
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--tb=short"])
+
+def test_prompt_has_role_definition():
+    data = load_prompt()
+    text = normalize(str(data.get("system_prompt", "")))
+    assert "voce e" in text or "you are" in text
+
+
+def test_prompt_mentions_format():
+    data = load_prompt()
+    combined = normalize(
+        f"{data.get('system_prompt', '')}\n{data.get('user_prompt', '')}"
+    )
+    assert "markdown" in combined or "user story" in combined
+
+
+def test_prompt_has_few_shot_examples():
+    data = load_prompt()
+    examples = data.get("few_shot_examples", [])
+    assert isinstance(examples, list)
+    assert len(examples) >= 2
+    for example in examples:
+        assert str(example.get("input", "")).strip()
+        assert str(example.get("output", "")).strip()
+
+
+def test_prompt_no_todos():
+    data = load_prompt()
+    serialized = yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
+    assert "TODO" not in serialized
+    assert "[TODO]" not in serialized
+
+
+def test_minimum_techniques():
+    data = load_prompt()
+    techniques = data.get("metadata", {}).get("techniques", [])
+    assert isinstance(techniques, list)
+    assert len(techniques) >= 2
+
+
+def test_prompt_has_required_metadata_fields():
+    data = load_prompt()
+    metadata = data.get("metadata", {})
+    for field in ("version", "techniques", "author", "target_format", "status"):
+        assert field in metadata
+        assert metadata[field]
+
+
+def test_few_shot_examples_do_not_reuse_dataset_reports():
+    data = load_prompt()
+    dataset_reports = {
+        normalize(str(row.get("inputs", {}).get("bug_report", "")))
+        for row in load_dataset_rows()
+    }
+
+    for example in data.get("few_shot_examples", []):
+        normalized_input = normalize(str(example.get("input", "")))
+        assert normalized_input not in dataset_reports
+        assert all(
+            report not in normalized_input and normalized_input not in report
+            for report in dataset_reports
+        )

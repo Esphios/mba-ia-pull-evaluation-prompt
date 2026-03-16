@@ -1,1 +1,1 @@
-# Pacote src - Resolução do Desafio de Prompt Engineering
+# Source package for the prompt engineering challenge.

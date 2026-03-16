@@ -1,56 +1,88 @@
-"""
-Script para fazer push de prompts otimizados ao LangSmith Prompt Hub.
+from __future__ import annotations
 
-Este script:
-1. Lê os prompts otimizados de prompts/bug_to_user_story_v2.yml
-2. Valida os prompts
-3. Faz push PÚBLICO para o LangSmith Hub
-4. Adiciona metadados (tags, descrição, técnicas utilizadas)
+from pathlib import Path
 
-SIMPLIFICADO: Código mais limpo e direto ao ponto.
-"""
+from langsmith import Client
+from langsmith.utils import LangSmithConflictError
 
-import os
-import sys
-from dotenv import load_dotenv
-from langchain import hub
-from langchain_core.prompts import ChatPromptTemplate
-from utils import load_yaml, check_env_vars, print_section_header
-
-load_dotenv()
-
-
-def push_prompt_to_langsmith(prompt_name: str, prompt_data: dict) -> bool:
-    """
-    Faz push do prompt otimizado para o LangSmith Hub (PÚBLICO).
-
-    Args:
-        prompt_name: Nome do prompt
-        prompt_data: Dados do prompt
-
-    Returns:
-        True se sucesso, False caso contrário
-    """
-    ...
+try:
+    from .utils import (
+        PROMPT_V2_PATH,
+        build_chat_prompt_from_document,
+        load_prompt_document,
+        load_settings,
+        unique_strings,
+        validate_prompt_document,
+    )
+except ImportError:
+    from utils import (
+        PROMPT_V2_PATH,
+        build_chat_prompt_from_document,
+        load_prompt_document,
+        load_settings,
+        unique_strings,
+        validate_prompt_document,
+    )
 
 
-def validate_prompt(prompt_data: dict) -> tuple[bool, list]:
-    """
-    Valida estrutura básica de um prompt (versão simplificada).
+def build_tags(prompt_document: dict[str, object]) -> list[str]:
+    metadata = prompt_document.get("metadata", {})
+    techniques = metadata.get("techniques", []) if isinstance(metadata, dict) else []
+    version = metadata.get("version") if isinstance(metadata, dict) else None
+    target_format = metadata.get("target_format") if isinstance(metadata, dict) else None
+    status = metadata.get("status") if isinstance(metadata, dict) else None
+    return unique_strings(
+        [
+            "bug-to-user-story",
+            "prompt-engineering",
+            "langsmith",
+            f"version:{version}" if version else "",
+            f"format:{target_format}" if target_format else "",
+            f"status:{status}" if status else "",
+            *[str(technique) for technique in techniques],
+        ]
+    )
 
-    Args:
-        prompt_data: Dados do prompt
 
-    Returns:
-        (is_valid, errors) - Tupla com status e lista de erros
-    """
-    ...
+def main() -> int:
+    settings = load_settings()
+    if not settings.langsmith_prompt_target or "/" not in settings.langsmith_prompt_target:
+        raise RuntimeError(
+            "LANGSMITH_PROMPT_TARGET deve estar definido como <usuario>/bug_to_user_story_v2."
+        )
 
+    prompt_document = load_prompt_document(PROMPT_V2_PATH)
+    errors = validate_prompt_document(prompt_document)
+    if errors:
+        joined = "\n".join(f"- {error}" for error in errors)
+        raise RuntimeError(f"O documento do prompt é inválido:\n{joined}")
 
-def main():
-    """Função principal"""
-    ...
+    prompt = build_chat_prompt_from_document(prompt_document)
+    client = Client()
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    try:
+        url = client.push_prompt(
+            settings.langsmith_prompt_target,
+            object=prompt,
+            description=str(prompt_document.get("description", "")).strip(),
+            readme=readme,
+            tags=build_tags(prompt_document),
+            is_public=True,
+        )
+    except LangSmithConflictError as exc:
+        message = str(exc)
+        if "Nothing to commit" not in message:
+            raise
+        url = client._get_prompt_url(settings.langsmith_prompt_target)
+        print("Nenhuma alteraÃ§Ã£o nova para publicar no prompt remoto.")
+        print(f"Prompt atual jÃ¡ estÃ¡ sincronizado em: {url}")
+        return 0
+
+    print(f"Prompt publicado com sucesso: {settings.langsmith_prompt_target}")
+    print(f"URL no LangSmith: {url}")
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

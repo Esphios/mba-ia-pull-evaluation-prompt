@@ -1,0 +1,81 @@
+source_prompt: leonanluppi/bug_to_user_story_v1
+pulled_at: '2026-03-16T06:34:14.371310+00:00'
+manifest:
+  lc: 1
+  type: constructor
+  id:
+  - langchain
+  - prompts
+  - chat
+  - ChatPromptTemplate
+  kwargs:
+    input_variables:
+    - bug_report
+    metadata:
+      lc_hub_owner: leonanluppi
+      lc_hub_repo: bug_to_user_story_v1
+      lc_hub_commit_hash: 2950c33dbd7ffaed2e440b50adfd7769d183f90faf0bae5aa4864354f88e4073
+    messages:
+    - lc: 1
+      type: constructor
+      id:
+      - langchain
+      - prompts
+      - chat
+      - SystemMessagePromptTemplate
+      kwargs:
+        prompt:
+          lc: 1
+          type: constructor
+          id:
+          - langchain
+          - prompts
+          - prompt
+          - PromptTemplate
+          kwargs:
+            input_variables:
+            - bug_report
+            template: 'Você é um assistente que ajuda a transformar relatos de bugs
+              de usuários em tarefas para desenvolvedores.
+
+
+              Analise o relato de bug abaixo e crie uma user story a partir dele.
+
+
+              Relato de Bug:
+
+              ---
+
+              {bug_report}
+
+              ---
+
+
+              User Story gerada:
+
+              '
+            template_format: f-string
+          name: PromptTemplate
+    - lc: 1
+      type: constructor
+      id:
+      - langchain
+      - prompts
+      - chat
+      - HumanMessagePromptTemplate
+      kwargs:
+        prompt:
+          lc: 1
+          type: constructor
+          id:
+          - langchain
+          - prompts
+          - prompt
+          - PromptTemplate
+          kwargs:
+            input_variables:
+            - bug_report
+            template: '{bug_report}'
+            template_format: f-string
+          name: PromptTemplate
+  name: ChatPromptTemplate
