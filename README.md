@@ -236,4 +236,4 @@ python .\src\evaluate.py --example 4
 - `tests/test_prompts.py` agora cobre metadados obrigatórios e impede few-shots
   idênticos ao dataset de avaliação.
 - `requirements.txt` foi reduzido para dependências diretas, deixando a
-  instalação mais previsível e compatível com a bootstrap.
+  instalação mais previsível e compatível com o bootstrap.

@@ -1,9 +1,9 @@
 # AGENTS.md
 
-## Objetivo do repositório
+## Visão Geral
 
-Este repositório implementa um fluxo de engenharia de prompts para o caso de
-uso "Bug Report -> User Story" com LangChain e LangSmith.
+Este repositório implementa um fluxo de engenharia de prompts para o caso de uso
+`Bug Report -> User Story` com LangChain e LangSmith.
 
 O sistema deve ser capaz de:
 
@@ -14,37 +14,48 @@ O sistema deve ser capaz de:
 5. avaliar a qualidade com métricas customizadas;
 6. atingir `>= 0.9` em cada métrica obrigatória.
 
-## Prioridades do projeto
+## Prioridade de Decisão
 
 Quando houver conflito entre referências, siga esta ordem:
 
 1. desafio;
 2. estrutura existente do repositório;
 3. boas práticas de engenharia;
-4. guia complementar.
+4. documentação complementar.
 
-## Estrutura e fonte de verdade
+## Tecnologias Principais
 
-- `datasets/bug_to_user_story.jsonl` é a fonte de verdade do dataset.
-- `src/dataset.py` deve apenas carregar e adaptar esse arquivo.
-- `prompts/bug_to_user_story_v2.yml` é o prompt otimizado principal.
-- `prompts/bug_to_user_story_v1.yml` representa a baseline de baixa qualidade.
-- `prompts/raw_prompts.yml` guarda a versão crua puxada do LangSmith.
+| Categoria | Tecnologia | Evidência | Uso |
+| --- | --- | --- | --- |
+| Runtime | Python 3.9+ | `README.md`, `requirements.txt` | scripts CLI |
+| Framework LLM | LangChain | `requirements.txt`, `src/utils.py` | prompts e execução |
+| Observabilidade | LangSmith | `requirements.txt`, `src/pull_prompts.py`, `src/push_prompts.py`, `src/evaluate.py` | prompt hub e avaliação |
+| Provedores | OpenAI e Google GenAI | `.env.example`, `src/utils.py` | geração e avaliação |
+| Testes | pytest | `tests/test_prompts.py` | validações estruturais |
 
-## Regras de engenharia
+## Estrutura e Fonte de Verdade
 
-- Python 3.9+
-- Código simples, pequeno e previsível
-- Scripts CLI devem funcionar via `python .\src\<arquivo>.py` no PowerShell
-- Nunca commitar `.env`
-- Sempre manter `.env.example` atualizado
-- Evitar duplicação do dataset em arquivos Python quando o JSONL já existir
-- Não alterar o dataset para facilitar as métricas
-- Não esconder regras em scripts soltos fora de `src/`
-- Todo texto voltado a desenvolvedores ou usuários em comentários, prompts,
-  mensagens CLI e documentação deve estar em pt-BR com acentuação correta
+- `datasets/bug_to_user_story.jsonl`: fonte de verdade do dataset.
+- `src/dataset.py`: deve apenas carregar e adaptar esse arquivo.
+- `prompts/bug_to_user_story_v1.yml`: baseline de baixa qualidade.
+- `prompts/bug_to_user_story_v2.yml`: prompt otimizado principal.
+- `prompts/raw_prompts.yml`: versão crua puxada do LangSmith.
+- `src/pull_prompts.py`, `src/push_prompts.py`, `src/evaluate.py`: fluxo operacional do desafio.
 
-## Regras do prompt
+## Regras de Engenharia
+
+- Python 3.9+.
+- Código simples, pequeno e previsível.
+- Scripts CLI devem funcionar via `python .\src\<arquivo>.py` no PowerShell.
+- Nunca commite `.env`.
+- Sempre mantenha `.env.example` atualizado.
+- Evite duplicação do dataset em arquivos Python quando o JSONL já existir.
+- Não altere o dataset para facilitar as métricas.
+- Não esconda regras em scripts soltos fora de `src/`.
+- Todo texto para desenvolvedores, prompts, mensagens CLI e documentação deve permanecer em pt-BR com acentuação correta.
+- Não quebre o suporte a OpenAI e Google.
+
+## Regras do Prompt
 
 O prompt otimizado deve:
 
@@ -56,7 +67,7 @@ O prompt otimizado deve:
 - evitar inventar fatos ausentes no bug report;
 - preservar detalhes técnicos e impacto de negócio quando informados.
 
-## Metadados mínimos do prompt otimizado
+## Metadados Mínimos do Prompt Otimizado
 
 `prompts/bug_to_user_story_v2.yml` deve conter:
 
@@ -71,7 +82,7 @@ O prompt otimizado deve:
 - `few_shot_examples`
 - `user_prompt`
 
-## Regras de avaliação
+## Regras de Avaliação
 
 As métricas obrigatórias são:
 
@@ -88,7 +99,21 @@ Critério de pronto:
 - prompt publicado no LangSmith;
 - README descrevendo técnicas e fluxo.
 
-## Fluxo de trabalho recomendado
+## Setup e Comandos
+
+```bash
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install --upgrade pip
+pip install -r requirements.txt
+python .\src\pull_prompts.py
+pytest .\tests\test_prompts.py
+python .\src\push_prompts.py
+python .\src\evaluate.py
+python .\src\evaluate.py --variant all
+```
+
+## Fluxo de Trabalho Recomendado
 
 1. executar `python .\src\pull_prompts.py`;
 2. revisar `prompts/bug_to_user_story_v1.yml`;
@@ -98,10 +123,23 @@ Critério de pronto:
 6. executar `python .\src\evaluate.py`;
 7. iterar até todas as métricas passarem.
 
-## Boas práticas
+## Configuração e Convenções
+
+- Variáveis e aliases suportados estão documentados em `.env.example` e `README.md`.
+- O fluxo diferencia baseline local, prompt otimizado e publicação remota no LangSmith.
+- O projeto lida explicitamente com o caso de `409 Nothing to commit` no push.
+- Manter metadados e tags coerentes entre YAML e LangSmith evita drift entre prompt local e remoto.
+
+## Boas Práticas
 
 - Preferir iterações pequenas no prompt.
 - Documentar decisões no `README.md`.
 - Manter metadados e tags coerentes entre YAML e LangSmith.
 - Tratar erros com mensagens claras.
-- Não quebrar o suporte a OpenAI e Google.
+- Validar o prompt antes de publicar.
+
+## Peculiaridades do Projeto
+
+- O dataset local pode ser expandido de forma determinística apenas no momento da publicação remota, conforme descrito no README.
+- O projeto mistura requisitos de engenharia de prompts, publicação remota e avaliação quantitativa no mesmo fluxo.
+- O histórico recente usa Conventional Commits de forma consistente (`feat:`, `docs:`, `chore:`).
